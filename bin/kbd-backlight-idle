@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# kbd-backlight-idle
+#
+# ASUS keyboard backlight: turns OFF after IDLE_TIMEOUT seconds of no
+# keypresses, and back ON to whatever level was active before it went
+# idle (not a hardcoded level) the moment a key is pressed.
+#
+# Must be run as root (brightnessctl needs root to write the kbd
+# backlight, and evtest needs root to read /dev/input):
+#
+#   sudo kbd-backlight-idle
+#
+# Requires: brightnessctl, evtest, libinput
+
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+    echo "Run this as root: sudo $0" >&2
+    exit 1
+fi
+
+# ---- Config -----------------------------------------------------------
+# Defaults, overridable by /etc/kbd-backlight-idle.conf
+DEVICE="asus::kbd_backlight"   # confirm with: brightnessctl -l
+IDLE_TIMEOUT=10                # seconds of inactivity before turning off
+FALLBACK_LEVEL="50%"           # used only if the backlight is already off when the script starts
+
+for conf in /etc/kbd-backlight-idle.conf "$(dirname "$0")/../config/kbd-backlight-idle.conf"; do
+    if [[ -f "$conf" ]]; then
+        # shellcheck source=/dev/null
+        source "$conf"
+        break
+    fi
+done
+# ------------------------------------------------------------------------
+
+STATE_DIR="/run/kbd-backlight-idle"
+mkdir -p "$STATE_DIR"
+LEVEL_FILE="$STATE_DIR/last_level"
+ACTIVITY_FILE="$STATE_DIR/last_activity"
+
+date +%s > "$ACTIVITY_FILE"
+
+# Auto-detect the keyboard's /dev/input/eventN device
+KBD_EVENT=$(libinput list-devices 2>/dev/null | awk '
+  /^Device:/ {name=$0}
+  /Kernel:/  {if (name ~ /[Kk]eyboard/) print $2}' | head -n1)
+
+if [[ -z "${KBD_EVENT:-}" ]]; then
+    echo "Couldn't auto-detect a keyboard device." >&2
+    echo "Run: libinput list-devices   and hardcode KBD_EVENT below (e.g. /dev/input/event5)." >&2
+    exit 1
+fi
+
+# Remember whatever level is currently set. If the backlight happens to
+# already be off when we start, fall back to FALLBACK_LEVEL so there's
+# something sensible to restore to later.
+CURRENT=$(brightnessctl --device="$DEVICE" get)
+if (( CURRENT > 0 )); then
+    echo "$CURRENT" > "$LEVEL_FILE"
+else
+    brightnessctl --device="$DEVICE" set "$FALLBACK_LEVEL" >/dev/null
+    brightnessctl --device="$DEVICE" get > "$LEVEL_FILE"
+fi
+
+echo "Device:    $KBD_EVENT"
+echo "Backlight: off after ${IDLE_TIMEOUT}s idle, restores to whatever level was last set. Ctrl+C to stop."
+
+cleanup() {
+    kill "${IDLE_PID:-0}" 2>/dev/null || true
+}
+trap cleanup INT TERM EXIT
+
+# Background watcher: turns backlight off once idle timeout is hit,
+# remembering the level it was at right before doing so.
+(
+    STATE="on"
+    while true; do
+        sleep 1
+        NOW=$(date +%s)
+        LAST=$(cat "$ACTIVITY_FILE" 2>/dev/null || echo "$NOW")
+        if (( NOW - LAST >= IDLE_TIMEOUT )) && [[ "$STATE" == "on" ]]; then
+            CUR=$(brightnessctl --device="$DEVICE" get)
+            if (( CUR > 0 )); then
+                echo "$CUR" > "$LEVEL_FILE"
+            fi
+            brightnessctl --device="$DEVICE" set 0 >/dev/null 2>&1 || true
+            STATE="off"
+        elif (( NOW - LAST < IDLE_TIMEOUT )) && [[ "$STATE" == "off" ]]; then
+            STATE="on"
+        fi
+    done
+) &
+IDLE_PID=$!
+
+# Foreground: listen for keypresses, restore the remembered level
+evtest "$KBD_EVENT" 2>/dev/null | while read -r line; do
+    if [[ "$line" == *"type 1 (EV_KEY)"* && "$line" == *"value 1"* ]]; then
+        date +%s > "$ACTIVITY_FILE"
+        LEVEL=$(cat "$LEVEL_FILE" 2>/dev/null || echo "$FALLBACK_LEVEL")
+        brightnessctl --device="$DEVICE" set "$LEVEL" >/dev/null 2>&1 || true
+    fi
+done
