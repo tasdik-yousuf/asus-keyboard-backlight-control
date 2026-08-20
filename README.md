@@ -21,7 +21,8 @@ moment you press a key.
 - `libinput`
 
 ```bash
-sudo pacman -S brightnessctl evtest libinput
+sudo apt update
+sudo apt install brightnessctl evtest libinput-tools
 ```
 
 ## Install
@@ -36,7 +37,8 @@ sudo pacman -S brightnessctl evtest libinput
 2. **Install dependencies**
 
    ```bash
-   sudo pacman -S brightnessctl evtest libinput
+   sudo apt update
+   sudo apt install brightnessctl evtest libinput-tools
    ```
 
 3. **Run the installer**
