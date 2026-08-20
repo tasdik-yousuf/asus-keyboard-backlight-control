@@ -1,4 +1,4 @@
-# kbd-backlight-idle
+# asus-keyboard-backlight-control
 
 Turns off the ASUS keyboard backlight after a period of inactivity, and
 restores it to whatever level was last set (not a fixed brightness) the
