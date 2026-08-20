@@ -2,17 +2,20 @@
 
 Turns off the ASUS keyboard backlight after a period of inactivity, and
 restores it to whatever level was last set (not a fixed brightness) the
-moment you press a key.
+moment you type, click, move the mouse, or scroll.
 
 ## How it works
 
-- Watches the keyboard's raw input events via `evtest` (works under X11,
-  Wayland, or a bare TTY, since it reads the kernel device directly).
-- After `IDLE_TIMEOUT` seconds with no keypress, it remembers the current
-  backlight level and sets it to 0.
-- On the next keypress, it restores that remembered level — so if you had
-  it at 30% before it idled out, it comes back at 30%, not some hardcoded
-  default.
+- Watches raw input events from both the keyboard and mouse via `evtest`
+  (works under X11, Wayland, or a bare TTY, since it reads the kernel
+  devices directly).
+- After `IDLE_TIMEOUT` seconds with no keyboard or mouse activity, it
+  remembers the current backlight level and sets it to 0.
+- On the next keypress, click, mouse movement, or scroll, it restores
+  that remembered level — so if you had it at 30% before it idled out,
+  it comes back at 30%, not some hardcoded default.
+- If only a keyboard or only a mouse is detected, it runs fine with just
+  that one.
 
 ## Requirements
 
@@ -83,13 +86,13 @@ Run these in order — foreground first, service last — so config problems sur
 
    Look for a `leds` class device matching `DEVICE` in the config.
 
-2. **Sanity-check keyboard detection**
+2. **Sanity-check device detection**
 
    ```bash
    sudo libinput list-devices
    ```
 
-   Confirm a device with "Keyboard" in its name shows a `Kernel:` line like `/dev/input/event5`. This is what the script auto-detects on startup.
+   Confirm a keyboard device shows `Capabilities: keyboard` and your mouse shows `Capabilities: pointer`, each with a `Kernel:` line like `/dev/input/event5`. These are what the script auto-detects on startup — it prints which ones it found when it starts.
 
 3. **Run in the foreground**
 
@@ -109,11 +112,11 @@ Run these in order — foreground first, service last — so config problems sur
 
 5. **Test the idle timeout**
 
-   Stop touching the keyboard. After `IDLE_TIMEOUT` seconds the value should drop to 0 and the physical backlight should turn off.
+   Stop touching the keyboard and mouse. After `IDLE_TIMEOUT` seconds the value should drop to 0 and the physical backlight should turn off.
 
-6. **Test wake-on-keypress and level memory**
+6. **Test wake-on-activity and level memory**
 
-   Press any key — the value should jump back to whatever it was before idling out. To confirm it's not a fixed level: manually set a different level (`brightnessctl --device="asus::kbd_backlight" set 30%`), let it idle out, then press a key — it should restore to 30%, not the original level.
+   Press any key, click, move the mouse, or scroll — the value should jump back to whatever it was before idling out. To confirm it's not a fixed level: manually set a different level (`brightnessctl --device="asus::kbd_backlight" set 30%`), let it idle out, then move the mouse — it should restore to 30%, not the original level.
 
 7. **Switch to the systemd service**
 
