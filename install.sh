@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Installs kbd-backlight-idle: binary to /usr/local/bin, config to /etc,
-# service unit to systemd. Run with sudo.
 
 set -euo pipefail
 
@@ -14,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "Checking dependencies..."
 for dep in brightnessctl evtest libinput; do
     if ! command -v "$dep" >/dev/null 2>&1; then
-        echo "Missing dependency: $dep (install with your package manager, e.g. sudo pacman -S $dep)" >&2
+        echo "Missing dependency: $dep (install with your package manager, e.g. sudo apt install $dep)" >&2
         exit 1
     fi
 done

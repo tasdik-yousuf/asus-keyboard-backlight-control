@@ -1,17 +1,4 @@
 #!/usr/bin/env bash
-# kbd-backlight-idle
-#
-# ASUS keyboard backlight: turns OFF after IDLE_TIMEOUT seconds of no
-# keyboard, mouse, or touchpad activity, and back ON to whatever level
-# was active before it went idle (not a hardcoded level) the moment you
-# press a key, click, move, scroll, or tap.
-#
-# Must be run as root (brightnessctl needs root to write the kbd
-# backlight, and evtest needs root to read /dev/input):
-#
-#   sudo kbd-backlight-idle
-#
-# Requires: brightnessctl, evtest, libinput
 
 set -euo pipefail
 
@@ -20,11 +7,9 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# ---- Config -----------------------------------------------------------
-# Defaults, overridable by /etc/kbd-backlight-idle.conf
-DEVICE="asus::kbd_backlight"   # confirm with: brightnessctl -l
-IDLE_TIMEOUT=10                # seconds of inactivity before turning off
-FALLBACK_LEVEL="50%"           # used only if the backlight is already off when the script starts
+DEVICE="asus::kbd_backlight"
+IDLE_TIMEOUT=10
+FALLBACK_LEVEL="50%"
 
 for conf in /etc/kbd-backlight-idle.conf "$(dirname "$0")/../config/kbd-backlight-idle.conf"; do
     if [[ -f "$conf" ]]; then
@@ -33,7 +18,6 @@ for conf in /etc/kbd-backlight-idle.conf "$(dirname "$0")/../config/kbd-backligh
         break
     fi
 done
-# ------------------------------------------------------------------------
 
 STATE_DIR="/run/kbd-backlight-idle"
 mkdir -p "$STATE_DIR"
@@ -43,7 +27,7 @@ STATE_FILE="$STATE_DIR/state"
 
 date +%s > "$ACTIVITY_FILE"
 
-# Auto-detect the keyboard's /dev/input/eventN device
+
 KBD_EVENT=$(libinput list-devices 2>/dev/null | awk '
   /^Device:/ {name=$0}
   /Kernel:/  {if (name ~ /[Kk]eyboard/) print $2}' | head -n1)
@@ -54,8 +38,6 @@ if [[ -z "${KBD_EVENT:-}" ]]; then
     exit 1
 fi
 
-# Auto-detect the mouse's /dev/input/eventN device. Optional — if none is
-# found, the script still runs fine on keyboard activity alone.
 MOUSE_EVENT=$(libinput list-devices 2>/dev/null | awk '
   /^Device:/ {name=$0}
   /Kernel:/  {if (name ~ /[Mm]ouse/) print $2}' | head -n1)
@@ -64,8 +46,6 @@ if [[ -z "${MOUSE_EVENT:-}" ]]; then
     echo "No mouse device auto-detected — continuing with keyboard only." >&2
 fi
 
-# Auto-detect the touchpad's /dev/input/eventN device. Optional — if none
-# is found, the script still runs fine without it.
 TOUCHPAD_EVENT=$(libinput list-devices 2>/dev/null | awk '
   /^Device:/ {name=$0}
   /Kernel:/  {if (name ~ /[Tt]ouchpad/) print $2}' | head -n1)
@@ -74,10 +54,6 @@ if [[ -z "${TOUCHPAD_EVENT:-}" ]]; then
     echo "No touchpad device auto-detected." >&2
 fi
 
-# If the backlight is already on, remember that level. If it's already
-# off, that's treated as the user's choice, not something to override —
-# we just record FALLBACK_LEVEL as a reference for later, in case it's
-# ever turned on and then auto-off/restore cycles normally after that.
 CURRENT=$(brightnessctl --device="$DEVICE" get)
 if (( CURRENT > 0 )); then
     echo "$CURRENT" > "$LEVEL_FILE"
@@ -97,14 +73,7 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-# Background watcher: reconciles state against the actual live brightness
-# every second, and turns the backlight off once the idle timeout is hit
-# — but only from "on", never overriding a level the user set themselves.
-#
-# States:
-#   on        — backlight on, tracked normally, subject to the idle timeout
-#   auto-off  — WE turned it off due to idle; safe to auto-restore on activity
-#   user-off  — the user turned it off themselves; never auto-restored
+# Idle timer
 (
     while true; do
         sleep 1
@@ -114,8 +83,6 @@ trap cleanup INT TERM EXIT
         case "$CURSTATE" in
             on)
                 if (( CUR == 0 )); then
-                    # Went from lit to off without us doing it — the user
-                    # turned it off themselves. Leave it off, don't touch it.
                     echo "user-off" > "$STATE_FILE"
                 else
                     echo "$CUR" > "$LEVEL_FILE"
@@ -129,10 +96,6 @@ trap cleanup INT TERM EXIT
                 ;;
             auto-off|user-off)
                 if (( CUR > 0 )); then
-                    # Something turned it back on (an activity listener
-                    # restoring from auto-off, or the user manually
-                    # switching it back on from user-off) — resume normal
-                    # tracking either way.
                     echo "$CUR" > "$LEVEL_FILE"
                     echo "on" > "$STATE_FILE"
                 fi
@@ -142,8 +105,7 @@ trap cleanup INT TERM EXIT
 ) &
 IDLE_PID=$!
 
-# Background: listen for mouse activity (movement, click, scroll), restore
-# the remembered level. Only started if a mouse was found.
+# Mouse listener
 if [[ -n "${MOUSE_EVENT:-}" ]]; then
     (
         evtest "$MOUSE_EVENT" 2>/dev/null | while read -r line; do
@@ -160,8 +122,7 @@ if [[ -n "${MOUSE_EVENT:-}" ]]; then
     MOUSE_PID=$!
 fi
 
-# Background: listen for touchpad activity (tap, swipe, scroll), restore
-# the remembered level. Only started if a touchpad was found.
+# Touchpad listener
 if [[ -n "${TOUCHPAD_EVENT:-}" ]]; then
     (
         evtest "$TOUCHPAD_EVENT" 2>/dev/null | while read -r line; do
@@ -178,10 +139,7 @@ if [[ -n "${TOUCHPAD_EVENT:-}" ]]; then
     TOUCHPAD_PID=$!
 fi
 
-# Foreground: listen for keypresses. Every keypress resets the idle timer.
-# Brightness is only restored when coming back from auto-off — a
-# deliberate user-off (however it was set) is never reversed by this
-# script; the user's own choice always takes priority.
+# Keyboard listener
 evtest "$KBD_EVENT" 2>/dev/null | while read -r line; do
     if [[ "$line" == *"type 1 (EV_KEY)"* && "$line" == *"value 1"* ]]; then
         date +%s > "$ACTIVITY_FILE"

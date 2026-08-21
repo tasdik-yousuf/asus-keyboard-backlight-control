@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Removes kbd-backlight-idle. Run with sudo.
 
 set -euo pipefail
 
