@@ -1,23 +1,33 @@
-# asus-keyboard-backlight-control
+# kbd-backlight-idle
 
 Turns off the ASUS keyboard backlight after a period of inactivity, and
 restores it to whatever level was last set (not a fixed brightness) the
-moment you press a key — or click, move, or scroll the mouse, if one is
-detected.
+moment you press a key — or click, move, scroll, or tap on a mouse or
+touchpad, if either is detected.
 
 ## How it works
 
 - Watches the keyboard's raw input events via `evtest` (works under X11,
   Wayland, or a bare TTY, since it reads the kernel device directly).
-- If a mouse is also auto-detected, it's watched the same way in a
-  separate background listener — movement, clicks, and scroll all count
-  as activity too. If none is found, the script just runs on keyboard
-  activity alone; nothing else changes.
-- After `IDLE_TIMEOUT` seconds with no activity from either, it
-  remembers the current backlight level and sets it to 0.
-- On the next keypress (or mouse activity), it restores that remembered
-  level — so if you had it at 30% before it idled out, it comes back at
-  30%, not some hardcoded default.
+- If a mouse and/or touchpad is also auto-detected, each is watched the
+  same way in its own separate background listener — movement, clicks,
+  scroll, and taps all count as activity too. Any that aren't found are
+  simply skipped; nothing else changes.
+- Every keypress, click, or tap resets the idle timer. **It never touches
+  brightness while the backlight is already on** — so it can't fight a
+  manual level change, whether that's you running `brightnessctl`
+  yourself or pressing the keyboard's own brightness hotkey (which is
+  itself just a keypress, indistinguishable from any other).
+- After `IDLE_TIMEOUT` seconds with no activity from any of them, it
+  reads whatever level is *actually* set at that moment, remembers it,
+  and turns the backlight off itself. The next activity restores exactly
+  that level.
+- **If you turn the backlight off yourself** — hotkey, `brightnessctl`,
+  however — the script recognizes this wasn't its own doing and treats
+  it as deliberate. It will not turn it back on. This state only clears
+  once you turn the backlight back on yourself; after that, normal
+  idle/restore tracking resumes. Your manually chosen level always takes
+  priority over the script's own idle logic.
 
 ## Requirements
 
@@ -94,7 +104,7 @@ Run these in order — foreground first, service last — so config problems sur
    sudo libinput list-devices
    ```
 
-   Confirm a device with "Keyboard" in its name shows a `Kernel:` line like `/dev/input/event5`. If you also want mouse activity to count, check for a device with "Mouse" in its name too — this is optional, the script runs fine on keyboard alone if none is found.
+   Confirm a device with "Keyboard" in its name shows a `Kernel:` line like `/dev/input/event5`. If you also want mouse or touchpad activity to count, check for devices with "Mouse" or "Touchpad" in their names too — these are optional, the script runs fine on keyboard alone if none are found.
 
 3. **Run in the foreground**
 
